@@ -98,25 +98,51 @@ public function show($id)
     ]
 )]
 public function addItem(Request $request)
-    {
-        $validated = $request->validate([
-            'cart_id' => 'required|exists:carts,id',
-            'product_id' => 'required|integer',
-            'product_name' => 'required|string',
-            'quantity' => 'required|integer|min:1',
-            'price' => 'required|numeric|min:0',
-        ]);
+{
+    $validated = $request->validate([
+        'cart_id' => 'required|exists:carts,id',
+        'product_id' => 'required|integer',
+        'product_name' => 'required|string',
+        'quantity' => 'required|integer|min:1',
+        'price' => 'required|numeric|min:0',
+    ]);
 
-        $cartItem = CartItem::create($validated);
+    $cartItem = CartItem::create($validated);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Product added to cart successfully',
-            'data' => $cartItem,
-            'meta' => [
-                'service_name' => 'Cart-Service',
-                'api_version' => 'v1'
-            ]
-        ], 201);
-    }
+    $iaeCloudService = app(\App\Services\IaeCloudService::class);
+
+    $auditResult = $iaeCloudService->sendCartItemAudit($cartItem->toArray());
+
+    $publishResult = $iaeCloudService->publishCartItemAdded(
+        $cartItem->toArray(),
+        $auditResult['receipt_number'] ?? null
+    );
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Product added to cart successfully',
+        'data' => $cartItem,
+        'integration' => [
+            'm2m_auth' => [
+                'status' => 'success',
+                'api_key' => config('iae.cloud_api_key'),
+                'team' => config('iae.team_id'),
+            ],
+            'soap_audit' => [
+                'success' => $auditResult['success'],
+                'status' => $auditResult['status'],
+                'receipt_number' => $auditResult['receipt_number'],
+            ],
+            'rabbitmq_publish' => [
+                'success' => $publishResult['success'],
+                'response' => $publishResult['response'],
+            ],
+        ],
+        'meta' => [
+            'service_name' => 'Cart-Service',
+            'api_version' => 'v1',
+            'routing_key' => config('iae.event_routing_key'),
+        ],
+    ], 201);
+}
 }
