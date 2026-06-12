@@ -181,35 +181,22 @@ Hasil response dari Laravel menunjukkan:
 * Exchange: iae.central.exchange
 * Routing Key: cart.item.added
 
-## 8. Sequence Diagram Internal
+8. Sequence Diagram Internal
 
-```mermaid
-sequenceDiagram
-    actor Client
-    participant CartService as Keranjang Service Laravel
-    participant SSO as Cloud Dosen SSO/JWT
-    participant SOAP as SOAP Audit Cloud Dosen
-    participant MQ as RabbitMQ / Message Publisher
-    participant DB as Database
-
-    Client->>CartService: POST /api/v1/carts/items
-    CartService->>CartService: Validasi API Key Lokal dan Request Body
-    CartService->>DB: Simpan data item ke cart_items
-    DB-->>CartService: Data item berhasil disimpan
-
-    CartService->>SSO: POST /api/v1/auth/token dengan M2M API Key
-    SSO-->>CartService: M2M JWT Token
-
-    CartService->>SOAP: POST /soap/v1/audit dengan SOAP XML
-    SOAP-->>CartService: SUCCESS + ReceiptNumber
-
-    CartService->>MQ: POST /api/v1/messages/publish
-    MQ-->>CartService: Publish Success ke iae.central.exchange
-
-    CartService-->>Client: 201 Created + Integration Status
+Sequence diagram berikut menggambarkan alur integrasi pada Keranjang Service dalam menjalankan transaksi kritis POST /api/v1/carts/items. Diagram ini menunjukkan bagaimana service berinteraksi dengan sistem pusat dosen, yaitu Cloud SSO/JWKS, Legacy SOAP Audit, dan RabbitMQ Message Broker.
 
 
-```
+
+
+Pada tahap awal, pengguna atau customer melakukan proses verifikasi SSO melalui endpoint GET /api/v1/sso/verify dengan membawa token JWT. Keranjang Service kemudian mengambil public key dari endpoint JWKS milik Cloud Dosen melalui GET /api/v1/auth/jwks. Setelah public key diterima, service melakukan validasi JWT dan memetakan identitas pengguna ke role lokal, yaitu customer.
+
+Setelah proses SSO berhasil, customer menjalankan transaksi kritis dengan mengirim request POST /api/v1/carts/items. Transaksi ini dikategorikan sebagai transaksi kritis karena bersifat state-changing, yaitu mengubah data pada sistem dengan menambahkan item baru ke dalam keranjang. Keranjang Service memvalidasi API key lokal dan request body, kemudian menyimpan data item ke tabel cart_items pada database.
+
+Setelah data berhasil disimpan, Keranjang Service mengambil M2M token dari Cloud Dosen menggunakan API Key KEY-MHS-54. Token ini digunakan untuk mengakses layanan pusat secara aman. Selanjutnya, service mengirimkan data transaksi ke Legacy SOAP Audit melalui endpoint /soap/v1/audit. Data transaksi dikemas dalam format SOAP/XML dengan informasi seperti TeamID, ActivityName, dan LogContent. Jika proses berhasil, sistem audit mengembalikan status SUCCESS dan ReceiptNumber.
+
+Tahap terakhir adalah publikasi event ke RabbitMQ melalui endpoint /api/v1/messages/publish. Event yang dikirim menggunakan routing key cart.item.added dan dipublikasikan ke exchange iae.central.exchange. Proses ini menunjukkan bahwa aktivitas bisnis pada Keranjang Service berhasil disebarkan secara asynchronous ke message broker.
+
+Berdasarkan sequence diagram tersebut, alur integrasi sudah mencakup tiga komponen utama Tugas 3, yaitu Federated SSO/JWT, SOAP XML Client, dan RabbitMQ Publisher. Diagram ini juga menunjukkan bahwa transaksi kritis yang dipilih sudah tepat karena melibatkan perubahan data, pencatatan audit, dan penyebaran event ke sistem lain.
 
 ## 9. Evidence Pengujian
 
