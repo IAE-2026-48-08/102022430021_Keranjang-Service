@@ -13,15 +13,28 @@ class IaeCloudService
 
     public function getM2mToken(): string
     {
-        $response = Http::asJson()->post($this->baseUrl() . '/api/v1/auth/token', [
-            'api_key' => config('iae.cloud_api_key'),
-        ]);
+        $response = Http::acceptJson()
+            ->asJson()
+            ->post($this->baseUrl() . '/api/v1/auth/token', [
+                'api_key' => config('iae.cloud_api_key'),
+                'nim' => config('iae.student_nim'),
+            ]);
 
         if (!$response->successful()) {
-            throw new \Exception('Gagal mengambil token M2M dari cloud dosen: ' . $response->body());
+            throw new \Exception(
+                'Gagal mengambil token M2M dari cloud dosen: ' . $response->body()
+            );
         }
 
-        return $response->json('token');
+        $token = $response->json('token');
+
+        if (empty($token)) {
+            throw new \Exception(
+                'Token M2M tidak ditemukan pada response cloud dosen.'
+            );
+        }
+
+        return $token;
     }
 
     public function sendCartItemAudit(array $cartItem): array
@@ -65,8 +78,17 @@ class IaeCloudService
 
         $body = $response->body();
 
-        preg_match('/<iae:ReceiptNumber>(.*?)<\/iae:ReceiptNumber>/', $body, $receiptMatch);
-        preg_match('/<iae:Status>(.*?)<\/iae:Status>/', $body, $statusMatch);
+        preg_match(
+            '/<iae:ReceiptNumber>(.*?)<\/iae:ReceiptNumber>/',
+            $body,
+            $receiptMatch
+        );
+
+        preg_match(
+            '/<iae:Status>(.*?)<\/iae:Status>/',
+            $body,
+            $statusMatch
+        );
 
         return [
             'success' => $response->successful() && str_contains($body, 'SUCCESS'),
@@ -76,8 +98,10 @@ class IaeCloudService
         ];
     }
 
-    public function publishCartItemAdded(array $cartItem, ?string $receiptNumber = null): array
-    {
+    public function publishCartItemAdded(
+        array $cartItem,
+        ?string $receiptNumber = null
+    ): array {
         $token = $this->getM2mToken();
 
         $payload = [
@@ -106,7 +130,10 @@ class IaeCloudService
         $response = Http::withToken($token)
             ->acceptJson()
             ->asJson()
-            ->post($this->baseUrl() . '/api/v1/messages/publish', $payload);
+            ->post(
+                $this->baseUrl() . '/api/v1/messages/publish',
+                $payload
+            );
 
         return [
             'success' => $response->successful(),
